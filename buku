@@ -618,7 +618,7 @@ class BukuDb:
         # Ensure that the URL does not exist in DB already
         id = self.get_rec_id(url)
         if id != -1:
-            LOGERR('URL [%s] already exists at index %d', url, id)
+            LOGDBG('URL [%s] already exists at index %d', url, id)
             return -1
 
         if fetch:
@@ -948,7 +948,7 @@ class BukuDb:
                 LOGERR('No matching index %d', index)
                 return False
         except sqlite3.IntegrityError:
-            LOGERR('URL already exists')
+            LOGDBG('URL already exists')
             return False
         except sqlite3.OperationalError as e:
             LOGERR(e)
@@ -2145,7 +2145,7 @@ class BukuDb:
             try:
                 # If range starts from 0 throw an error
                 if low <= 0:
-                    raise IndexError
+                    raise IndexError(f'low range: {low}')
 
                 qry = 'SELECT URL from bookmarks where id BETWEEN ? AND ?'
                 for row in self.cur.execute(qry, (low, high)):
@@ -2344,7 +2344,7 @@ class BukuDb:
         add_parent_folder_as_tag : bool
             True if bookmark parent folders should be added as tags else False.
         """
-
+        print(f'loading {path}')
         # Connect to input DB
         conn = sqlite3.connect('file:%s?mode=ro' % path, uri=True)
 
@@ -2500,7 +2500,7 @@ class BukuDb:
             if resp == 'y':
                 bookmarks_database = os.path.expanduser(gc_bm_db_path)
                 if not os.path.exists(bookmarks_database):
-                    raise FileNotFoundError
+                    raise FileNotFoundError(bookmarks_database)
                 self.load_chrome_database(bookmarks_database, newtag, add_parent_folder_as_tag)
         except Exception as e:
             LOGERR(e)
@@ -2512,7 +2512,7 @@ class BukuDb:
             if resp == 'y':
                 bookmarks_database = os.path.expanduser(cb_bm_db_path)
                 if not os.path.exists(bookmarks_database):
-                    raise FileNotFoundError
+                    raise FileNotFoundError(bookmarks_database)
                 self.load_chrome_database(bookmarks_database, newtag, add_parent_folder_as_tag)
         except Exception as e:
             LOGERR(e)
@@ -2524,10 +2524,10 @@ class BukuDb:
             if resp == 'y':
                 bookmarks_database = os.path.expanduser(ff_bm_db_path)
                 if not os.path.exists(bookmarks_database):
-                    raise FileNotFoundError
+                    raise FileNotFoundError(bookmarks_database)
                 self.load_firefox_database(bookmarks_database, newtag, add_parent_folder_as_tag)
         except Exception as e:
-            LOGERR(e)
+            LOGERR(f'exception {e}')
             print('Could not import bookmarks from Firefox.')
 
         try:
@@ -2536,7 +2536,7 @@ class BukuDb:
             if resp == 'y':
                 bookmarks_database = os.path.expanduser(me_bm_db_path)
                 if not os.path.exists(bookmarks_database):
-                    raise FileNotFoundError
+                    raise FileNotFoundError(bookmarks_database)
                 self.load_edge_database(bookmarks_database, newtag, add_parent_folder_as_tag)
         except Exception as e:
             LOGERR(e)
@@ -3115,12 +3115,21 @@ def get_firefox_profile_name(path):
     profile : str
         Firefox profile name.
     """
-    from configparser import ConfigParser, NoOptionError
+    from configparser import ConfigParser, NoOptionError, NoSectionError
 
     profile_path = os.path.join(path, 'profiles.ini')
     if os.path.exists(profile_path):
         config = ConfigParser()
         config.read(profile_path)
+
+        try:
+            swlpn = config.get('General','StartWithLastProfile')
+        except NoSectionError:
+            pass
+        else:
+            if swlpn:
+                profile_path = config.get(f'Profile{swlpn}', 'Path')
+                return profile_path
 
         install_names = [section for section in config.sections() if section.startswith('Install')]
         for name in install_names:
@@ -3149,8 +3158,6 @@ def get_firefox_profile_name(path):
             except NoOptionError:
                 pass
 
-        # There is no default profile
-        return None
     LOGDBG('get_firefox_profile_name(): {} does not exist'.format(path))
     return None
 
